@@ -107,3 +107,51 @@ def test_hotel_tool_api_failure_returns_empty(sample_places):
     with httpx.Client() as client:
         hotels = hotel_tool(sample_places, client=client)
         assert hotels == []
+
+
+def test_parse_stars_ignores_building_levels():
+    """Verify that building:levels (physical floor count) is ignored and only stars tag is used."""
+    from app.tools.hotels import _parse_stars
+
+    assert _parse_stars({"building:levels": "3"}) is None
+    assert _parse_stars({"building:levels": "5", "name": "5 Story Motel"}) is None
+    assert _parse_stars({"stars": "4"}) == 4.0
+    assert _parse_stars({"stars": "3 stars"}) == 3.0
+
+
+@respx.mock
+def test_hotel_tool_budget_level_filtering(sample_places):
+    """Verify hotel_tool uses budget_level to filter and rank hotels appropriately."""
+    mock_hotel_data = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 201,
+                "lat": 26.9250,  # Closest
+                "lon": 75.8250,
+                "tags": {"name": "Backpacker Hostel", "stars": "2"},
+            },
+            {
+                "type": "node",
+                "id": 202,
+                "lat": 26.9300,  # Slightly further
+                "lon": 75.8300,
+                "tags": {"name": "Grand Luxury Palace", "stars": "5"},
+            },
+        ]
+    }
+    respx.post(OVERPASS_API_URL).respond(200, json=mock_hotel_data)
+
+    with httpx.Client() as client:
+        # Luxury budget should select Grand Luxury Palace
+        luxury_hotels = hotel_tool(sample_places, budget_level=BudgetLevel.LUXURY, client=client)
+        assert len(luxury_hotels) == 1
+        assert luxury_hotels[0].name == "Grand Luxury Palace"
+        assert luxury_hotels[0].rating == 5.0
+
+        # Budget level should select Backpacker Hostel
+        budget_hotels = hotel_tool(sample_places, budget_level=BudgetLevel.BUDGET, client=client)
+        assert len(budget_hotels) == 1
+        assert budget_hotels[0].name == "Backpacker Hostel"
+        assert budget_hotels[0].rating == 2.0
+

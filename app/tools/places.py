@@ -104,8 +104,8 @@ def _fetch_from_geoapify(
             is_outdoor = _classify_indoor_outdoor(f"{category_str} {name}")
             place_id = props.get("place_id") or f"geoapify:{p_lat},{p_lon}"
             opening_hours = props.get("opening_hours")
-            rating = props.get("rank", {}).get("confidence") if isinstance(props.get("rank"), dict) else None
-
+            # Note: Geoapify Places v2 rank.confidence represents search match confidence,
+            # not user review rating. Set rating=None to adhere to "never invent data".
             places.append(
                 Place(
                     id=str(place_id),
@@ -113,7 +113,7 @@ def _fetch_from_geoapify(
                     lat=float(p_lat),
                     lon=float(p_lon),
                     category=category_str,
-                    rating=float(rating) if rating is not None and 0.0 <= float(rating) <= 5.0 else None,
+                    rating=None,
                     opening_hours=str(opening_hours) if opening_hours else None,
                     is_outdoor=is_outdoor,
                     source="geoapify",

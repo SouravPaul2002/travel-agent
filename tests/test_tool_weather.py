@@ -98,4 +98,55 @@ def test_parse_weather_code_mapping():
     assert parse_weather_code(0) == "Clear sky"
     assert parse_weather_code(95) == "Thunderstorm"
     assert parse_weather_code(9999) == "Moderate conditions"
-    assert parse_weather_code(None) == "Pleasant"
+    assert parse_weather_code(None) is None
+
+
+@respx.mock
+def test_weather_tool_missing_fields_not_fabricated():
+    """Verify missing metrics remain None rather than substituting fake numbers."""
+    mock_payload = {
+        "daily": {
+            "time": ["2026-10-10", "2026-10-11"],
+            "temperature_2m_max": [32.0, None],
+            "temperature_2m_min": [None, 19.0],
+            "precipitation_probability_max": [None, None],
+            "weather_code": [0, None],
+        }
+    }
+    respx.get(FORECAST_API_URL).respond(200, json=mock_payload)
+
+    with httpx.Client() as client:
+        forecast = weather_tool(lat=26.92, lon=75.79, start_date="2026-10-10", days=2, client=client)
+        assert len(forecast) == 2
+        # Day 1: min temp and precip missing -> None, not 18.0 or 0.0
+        assert forecast[0].temp_max == 32.0
+        assert forecast[0].temp_min is None
+        assert forecast[0].precipitation_prob is None
+        assert forecast[0].summary == "Clear sky"
+
+        # Day 2: max temp and weather code missing -> None, not 25.0 or Pleasant
+        assert forecast[1].temp_max is None
+        assert forecast[1].temp_min == 19.0
+        assert forecast[1].precipitation_prob is None
+        assert forecast[1].summary is None
+
+
+@respx.mock
+def test_weather_tool_drops_completely_empty_day():
+    """Verify a date with zero metrics provided is dropped completely."""
+    mock_payload = {
+        "daily": {
+            "time": ["2026-10-10", "2026-10-11"],
+            "temperature_2m_max": [30.0, None],
+            "temperature_2m_min": [20.0, None],
+            "precipitation_probability_max": [10.0, None],
+            "weather_code": [0, None],
+        }
+    }
+    respx.get(FORECAST_API_URL).respond(200, json=mock_payload)
+
+    with httpx.Client() as client:
+        forecast = weather_tool(lat=26.92, lon=75.79, start_date="2026-10-10", days=2, client=client)
+        assert len(forecast) == 1
+        assert forecast[0].date == "2026-10-10"
+

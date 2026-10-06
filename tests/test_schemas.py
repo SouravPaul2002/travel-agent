@@ -108,6 +108,23 @@ def test_daily_weather_valid():
         )
 
 
+def test_daily_weather_optional_fields():
+    """Verify DailyWeather accepts None for omitted/missing metrics to prevent data invention."""
+    weather = DailyWeather(
+        date="2026-10-10",
+        temp_min=None,
+        temp_max=None,
+        precipitation_prob=None,
+        summary=None,
+    )
+    assert weather.date == "2026-10-10"
+    assert weather.temp_min is None
+    assert weather.temp_max is None
+    assert weather.precipitation_prob is None
+    assert weather.summary is None
+    assert weather.source == "open-meteo"
+
+
 def test_itinerary_full_assembly():
     """Verify complete Itinerary assembly with nested DayPlans and validation."""
     request = TripRequest(city="Jaipur", days=1, interests=["history"])

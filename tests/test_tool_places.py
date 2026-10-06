@@ -44,6 +44,7 @@ def test_places_tool_geoapify_success(monkeypatch):
                     "lat": 26.9116,
                     "lon": 75.8195,
                     "categories": ["entertainment.museum"],
+                    "rank": {"confidence": 0.95},
                 }
             },
         ]
@@ -57,9 +58,11 @@ def test_places_tool_geoapify_success(monkeypatch):
         assert p1.name == "Hawa Mahal"
         assert p1.source == "geoapify"
         assert p1.is_outdoor is True  # sight
+        assert p1.rating is None
 
         assert p2.name == "Albert Hall Museum"
         assert p2.is_outdoor is False  # museum flagged indoor
+        assert p2.rating is None  # rank.confidence is NOT converted to rating
 
 
 @respx.mock

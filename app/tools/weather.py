@@ -44,10 +44,10 @@ WMO_CODE_MAP: dict[int, str] = {
 }
 
 
-def parse_weather_code(code: Optional[int]) -> str:
+def parse_weather_code(code: Optional[int]) -> Optional[str]:
     """Map WMO integer weather code to human-readable condition summary."""
     if code is None:
-        return "Pleasant"
+        return None
     return WMO_CODE_MAP.get(code, "Moderate conditions")
 
 
@@ -148,12 +148,22 @@ def weather_tool(
         for i, dt_str in enumerate(dates):
             if i >= days:
                 break
-            temp_max = float(max_temps[i]) if i < len(max_temps) and max_temps[i] is not None else 25.0
-            temp_min = float(min_temps[i]) if i < len(min_temps) and min_temps[i] is not None else 18.0
-            precip = float(precip_probs[i]) if i < len(precip_probs) and precip_probs[i] is not None else 0.0
-            # Ensure precip is bounded [0, 100]
-            precip = max(0.0, min(100.0, precip))
-            code = int(weather_codes[i]) if i < len(weather_codes) and weather_codes[i] is not None else None
+            raw_max = max_temps[i] if i < len(max_temps) else None
+            raw_min = min_temps[i] if i < len(min_temps) else None
+            raw_precip = precip_probs[i] if i < len(precip_probs) else None
+            raw_code = weather_codes[i] if i < len(weather_codes) else None
+
+            # If all core forecast metrics are omitted for this date, drop the day
+            if raw_max is None and raw_min is None and raw_precip is None and raw_code is None:
+                logger.warning(f"Omitting forecast for {dt_str}: all weather metrics missing from Open-Meteo.")
+                continue
+
+            temp_max = float(raw_max) if raw_max is not None else None
+            temp_min = float(raw_min) if raw_min is not None else None
+            precip = float(raw_precip) if raw_precip is not None else None
+            if precip is not None:
+                precip = max(0.0, min(100.0, precip))
+            code = int(raw_code) if raw_code is not None else None
             summary = parse_weather_code(code)
 
             forecasts.append(

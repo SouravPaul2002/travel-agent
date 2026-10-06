@@ -53,7 +53,7 @@ def run_smoke_test(city: str = "Jaipur") -> None:
         print(f"  [OK] Found {len(places)} attractions:")
         for idx, p in enumerate(places, start=1):
             env_type = "Outdoor" if p.is_outdoor else "Indoor"
-            print(f"       {idx}. {p.name} [{p.category}] ({env_type}) — src: {p.source}")
+            print(f"       {idx}. {p.name} [{p.category}] ({env_type}) - src: {p.source}")
     else:
         print("  [WARN] No places returned.")
 
@@ -64,8 +64,8 @@ def run_smoke_test(city: str = "Jaipur") -> None:
         if hotels:
             print(f"  [OK] Found {len(hotels)} hotels ranked by proximity to centroid:")
             for idx, h in enumerate(hotels, start=1):
-                stars = f"{h.rating}★" if h.rating else "unrated"
-                print(f"       {idx}. {h.name} — {h.distance_km:.2f} km away [{stars}] — src: {h.source}")
+                stars = f"{h.rating} stars" if h.rating else "unrated"
+                print(f"       {idx}. {h.name} - {h.distance_km:.2f} km away [{stars}] - src: {h.source}")
         else:
             print("  [WARN] No hotels returned near centroid.")
     else:
