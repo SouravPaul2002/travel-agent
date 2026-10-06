@@ -143,15 +143,67 @@ def test_hotel_tool_budget_level_filtering(sample_places):
     respx.post(OVERPASS_API_URL).respond(200, json=mock_hotel_data)
 
     with httpx.Client() as client:
-        # Luxury budget should select Grand Luxury Palace
+        # Luxury budget should rank Grand Luxury Palace first
         luxury_hotels = hotel_tool(sample_places, budget_level=BudgetLevel.LUXURY, client=client)
-        assert len(luxury_hotels) == 1
+        assert len(luxury_hotels) == 2
         assert luxury_hotels[0].name == "Grand Luxury Palace"
         assert luxury_hotels[0].rating == 5.0
 
-        # Budget level should select Backpacker Hostel
+        # Budget level should rank Backpacker Hostel first
         budget_hotels = hotel_tool(sample_places, budget_level=BudgetLevel.BUDGET, client=client)
-        assert len(budget_hotels) == 1
+        assert len(budget_hotels) == 2
         assert budget_hotels[0].name == "Backpacker Hostel"
         assert budget_hotels[0].rating == 2.0
+
+
+def test_budget_tier_boundaries_are_mutually_exclusive():
+    """Verify tier boundaries do not overlap: mid is strictly > 2.5 and < 4.0."""
+    from app.tools.hotels import _matches_budget
+
+    # 2.5 stars: matches budget, NOT mid or luxury
+    assert _matches_budget(2.5, BudgetLevel.BUDGET) is True
+    assert _matches_budget(2.5, BudgetLevel.MID) is False
+    assert _matches_budget(2.5, BudgetLevel.LUXURY) is False
+
+    # 3.0 stars: matches mid, NOT budget or luxury
+    assert _matches_budget(3.0, BudgetLevel.BUDGET) is False
+    assert _matches_budget(3.0, BudgetLevel.MID) is True
+    assert _matches_budget(3.0, BudgetLevel.LUXURY) is False
+
+    # 4.0 stars: matches luxury, NOT mid or budget
+    assert _matches_budget(4.0, BudgetLevel.BUDGET) is False
+    assert _matches_budget(4.0, BudgetLevel.MID) is False
+    assert _matches_budget(4.0, BudgetLevel.LUXURY) is True
+
+
+@respx.mock
+def test_hotel_ranking_favours_close_unrated_over_far_rated(sample_places):
+    """Verify an unrated hotel 300m away ranks above a rated hotel 8km away."""
+    mock_hotel_data = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 301,
+                "lat": 26.9275,  # ~300m from centroid
+                "lon": 75.8260,
+                "tags": {"name": "Close Unrated Inn"},
+            },
+            {
+                "type": "node",
+                "id": 302,
+                "lat": 26.9950,  # ~8km from centroid
+                "lon": 75.8300,
+                "tags": {"name": "Far 3-Star Hotel", "stars": "3"},
+            },
+        ]
+    }
+    respx.post(OVERPASS_API_URL).respond(200, json=mock_hotel_data)
+
+    with httpx.Client() as client:
+        ranked = hotel_tool(sample_places, budget_level=BudgetLevel.MID, client=client)
+        assert len(ranked) == 2
+        # The 300m unrated hotel should beat the 8km rated hotel!
+        assert ranked[0].name == "Close Unrated Inn"
+        assert ranked[1].name == "Far 3-Star Hotel"
+
 

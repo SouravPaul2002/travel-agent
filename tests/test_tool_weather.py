@@ -34,6 +34,8 @@ def test_geocode_city_success():
         lat, lon = coords
         assert round(lat, 2) == 26.92
         assert round(lon, 2) == 75.79
+        assert coords.country == "India"
+        assert coords.name == "Jaipur"
 
 
 @respx.mock
@@ -97,7 +99,7 @@ def test_parse_weather_code_mapping():
     """Verify WMO weather codes map to expected descriptions."""
     assert parse_weather_code(0) == "Clear sky"
     assert parse_weather_code(95) == "Thunderstorm"
-    assert parse_weather_code(9999) == "Moderate conditions"
+    assert parse_weather_code(9999) == "Unknown (code 9999)"
     assert parse_weather_code(None) is None
 
 

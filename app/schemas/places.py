@@ -14,7 +14,10 @@ class Place(BaseModel):
     category: str = Field(default="general", description="Category e.g. 'history', 'food', 'nature', 'monument'")
     rating: Optional[float] = Field(default=None, ge=0.0, le=5.0, description="Rating between 0.0 and 5.0")
     opening_hours: Optional[str] = Field(default=None, description="Opening hours string if available")
-    is_outdoor: Optional[bool] = Field(default=True, description="Whether the attraction is primarily outdoors")
+    is_outdoor: Optional[bool] = Field(
+        default=None,
+        description="Whether the attraction is primarily outdoors (True), indoors (False), or unknown (None)",
+    )
     source: str = Field(..., min_length=1, description="Origin source or data provider (e.g. 'geoapify', 'osm')")
 
     @field_validator("name")

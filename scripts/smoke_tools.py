@@ -36,13 +36,18 @@ def run_smoke_test(city: str = "Jaipur") -> None:
         print(f"  [FAIL] Could not geocode city: {city}")
         return
     lat, lon = coords
-    print(f"  [OK] Resolved coordinates: lat={lat:.4f}, lon={lon:.4f}")
+    location_label = f"{coords.name}, {coords.admin1 + ', ' if coords.admin1 else ''}{coords.country or ''}".strip()
+    print(f"  [OK] Resolved location: {location_label} (lat={lat:.4f}, lon={lon:.4f})")
 
     forecast = weather_tool(lat, lon, days=3)
     if forecast:
         print(f"  [OK] Fetched {len(forecast)} days of forecast:")
         for w in forecast:
-            print(f"       - {w.date}: {w.temp_min}°C to {w.temp_max}°C | Rain: {w.precipitation_prob}% | {w.summary} (src: {w.source})")
+            t_min = f"{w.temp_min}°C" if w.temp_min is not None else "N/A"
+            t_max = f"{w.temp_max}°C" if w.temp_max is not None else "N/A"
+            rain = f"{w.precipitation_prob}%" if w.precipitation_prob is not None else "N/A"
+            summ = w.summary or "Unknown"
+            print(f"       - {w.date}: {t_min} to {t_max} | Rain: {rain} | {summ} (src: {w.source})")
     else:
         print("  [WARN] Weather forecast returned 0 items.")
 
@@ -52,7 +57,7 @@ def run_smoke_test(city: str = "Jaipur") -> None:
     if places:
         print(f"  [OK] Found {len(places)} attractions:")
         for idx, p in enumerate(places, start=1):
-            env_type = "Outdoor" if p.is_outdoor else "Indoor"
+            env_type = "Outdoor" if p.is_outdoor is True else ("Indoor" if p.is_outdoor is False else "Unknown")
             print(f"       {idx}. {p.name} [{p.category}] ({env_type}) - src: {p.source}")
     else:
         print("  [WARN] No places returned.")

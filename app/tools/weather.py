@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 import httpx
 
+from app.schemas.trip import GeocodedLocation
 from app.schemas.weather import DailyWeather
 from app.tools._http import cached_request
 
@@ -48,17 +49,28 @@ def parse_weather_code(code: Optional[int]) -> Optional[str]:
     """Map WMO integer weather code to human-readable condition summary."""
     if code is None:
         return None
-    return WMO_CODE_MAP.get(code, "Moderate conditions")
+    if code in WMO_CODE_MAP:
+        return WMO_CODE_MAP[code]
+    return f"Unknown (code {code})"
 
 
-def geocode_city(city: str, client: Optional[httpx.Client] = None) -> Optional[tuple[float, float]]:
-    """Resolve a city name to (latitude, longitude) using Open-Meteo Geocoding API."""
+def geocode_city(
+    city: str,
+    country: Optional[str] = None,
+    client: Optional[httpx.Client] = None,
+) -> Optional[GeocodedLocation]:
+    """Resolve a city name to GeocodedLocation with coordinates, country, and admin area.
+
+    Uses Open-Meteo Geocoding API. If country is provided, filters candidate results
+    to match the specified country (case-insensitive on country or country_code).
+    Supports tuple unpacking: lat, lon = geocode_city("Paris").
+    """
     cleaned_city = city.strip()
     if not cleaned_city:
         return None
 
-    params = {"name": cleaned_city, "count": 1, "language": "en", "format": "json"}
-    # Cache geocoding for 7 days (coordinates are static)
+    params = {"name": cleaned_city, "count": 5, "language": "en", "format": "json"}
+    # Cache geocoding for 7 days (coordinates and locations are static)
     raw_response = cached_request(
         method="GET",
         url=GEOCODING_API_URL,
@@ -76,10 +88,30 @@ def geocode_city(city: str, client: Optional[httpx.Client] = None) -> Optional[t
         if not results or not isinstance(results, list):
             logger.warning(f"No geocoding results found for city: {city}")
             return None
-        first = results[0]
-        lat = float(first["latitude"])
-        lon = float(first["longitude"])
-        return lat, lon
+
+        # Filter by country if specified
+        target_item = None
+        if country:
+            country_clean = country.strip().lower()
+            for item in results:
+                c_name = (item.get("country") or "").lower()
+                c_code = (item.get("country_code") or "").lower()
+                if country_clean in (c_name, c_code):
+                    target_item = item
+                    break
+
+        if target_item is None:
+            target_item = results[0]
+
+        return GeocodedLocation(
+            name=target_item.get("name", cleaned_city),
+            lat=float(target_item["latitude"]),
+            lon=float(target_item["longitude"]),
+            country=target_item.get("country"),
+            country_code=target_item.get("country_code"),
+            admin1=target_item.get("admin1"),
+            timezone=target_item.get("timezone"),
+        )
     except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
         logger.warning(f"Failed to parse geocoding response for {city}: {exc}")
         return None

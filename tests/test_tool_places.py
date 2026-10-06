@@ -57,7 +57,7 @@ def test_places_tool_geoapify_success(monkeypatch):
         p1, p2 = places
         assert p1.name == "Hawa Mahal"
         assert p1.source == "geoapify"
-        assert p1.is_outdoor is True  # sight
+        assert p1.is_outdoor is None  # ambiguous category defaults to None
         assert p1.rating is None
 
         assert p2.name == "Albert Hall Museum"
@@ -116,3 +116,53 @@ def test_places_tool_all_providers_fail(monkeypatch):
     with httpx.Client() as client:
         places = places_tool("Jaipur", interests=["history"], limit=5, client=client)
         assert places == []
+
+
+def test_classify_indoor_outdoor_returns_none_when_unknown():
+    """Verify classifier returns None when environment is ambiguous, not guessing True."""
+    from app.tools.places import _classify_indoor_outdoor
+
+    assert _classify_indoor_outdoor("museum of art") is False
+    assert _classify_indoor_outdoor("city park") is True
+    assert _classify_indoor_outdoor("historic fort") is True
+    assert _classify_indoor_outdoor("tourism.sights generic_poi") is None
+    assert _classify_indoor_outdoor("attraction obscure_marker") is None
+
+
+@respx.mock
+def test_overpass_places_notability_ranking(monkeypatch):
+    """Verify places with wikidata/wikipedia tags are prioritized over obscure markers."""
+    monkeypatch.setattr(settings, "geoapify_api_key", None)
+
+    mock_overpass_data = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 1,
+                "lat": 26.91,
+                "lon": 75.81,
+                "tags": {"name": "Obscure Roadside Marker", "tourism": "attraction"},
+            },
+            {
+                "type": "node",
+                "id": 2,
+                "lat": 26.92,
+                "lon": 75.82,
+                "tags": {
+                    "name": "World Heritage Monument",
+                    "tourism": "attraction",
+                    "wikidata": "Q123456",
+                    "wikipedia": "en:World_Heritage_Monument",
+                },
+            },
+        ]
+    }
+    respx.post(OVERPASS_API_URL).respond(200, json=mock_overpass_data)
+
+    with httpx.Client() as client:
+        places = places_tool("Jaipur", interests=["history"], limit=2, client=client)
+        assert len(places) == 2
+        # Notable element with wikidata/wikipedia must come first
+        assert places[0].name == "World Heritage Monument"
+        assert places[1].name == "Obscure Roadside Marker"
+

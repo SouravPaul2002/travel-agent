@@ -1,3 +1,5 @@
+"""Schemas for weather forecasts."""
+
 from typing import Optional
 from pydantic import BaseModel, Field
 

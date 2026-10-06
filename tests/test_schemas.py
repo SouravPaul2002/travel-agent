@@ -59,6 +59,7 @@ def test_place_valid():
     assert place.name == "Hawa Mahal"
     assert place.rating == 4.5
     assert place.source == "osm"
+    assert place.is_outdoor is None
 
 
 def test_place_invalid_coords():

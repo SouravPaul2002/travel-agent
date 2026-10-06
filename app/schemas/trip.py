@@ -12,6 +12,23 @@ class BudgetLevel(str, Enum):
     LUXURY = "luxury"
 
 
+class GeocodedLocation(BaseModel):
+    """Geocoded geographical destination with coordinates and administrative hierarchy."""
+
+    name: str = Field(..., description="Matched locality or city name")
+    lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude coordinate")
+    lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude coordinate")
+    country: Optional[str] = Field(default=None, description="Country name e.g. 'India'")
+    country_code: Optional[str] = Field(default=None, description="Country code e.g. 'IN'")
+    admin1: Optional[str] = Field(default=None, description="Administrative subdivision, state, or province e.g. 'Rajasthan'")
+    timezone: Optional[str] = Field(default=None, description="Local timezone identifier e.g. 'Asia/Kolkata'")
+
+    def __iter__(self):
+        yield self.lat
+        yield self.lon
+
+
+
 class TripRequest(BaseModel):
     """Parsed and validated user travel request."""
 

@@ -59,9 +59,9 @@ def _parse_stars(tags: dict[str, str]) -> Optional[float]:
 def _matches_budget(rating: Optional[float], budget_level: BudgetLevel) -> bool:
     """Determine if a star rating aligns with the target budget tier.
 
-    Budget tiers:
+    Budget tiers (mutually exclusive boundaries):
     - BUDGET: <= 2.5 stars
-    - MID: 2.5 to 4.0 stars
+    - MID: > 2.5 and < 4.0 stars
     - LUXURY: >= 4.0 stars
     Unrated accommodations (rating is None) return True so they can serve as
     fallbacks when OSM nodes lack explicit star tags.
@@ -71,36 +71,49 @@ def _matches_budget(rating: Optional[float], budget_level: BudgetLevel) -> bool:
     if budget_level == BudgetLevel.BUDGET:
         return rating <= 2.5
     elif budget_level == BudgetLevel.MID:
-        return 2.5 <= rating <= 4.0
+        return 2.5 < rating < 4.0
     elif budget_level == BudgetLevel.LUXURY:
         return rating >= 4.0
     return True
 
 
-def hotel_tool(
-    places: list[Place],
-    budget_level: BudgetLevel = BudgetLevel.MID,
-    limit: int = 5,
+def _compute_hotel_score(hotel: Hotel, budget_level: BudgetLevel) -> float:
+    """Rank by a combined score: distance first, with a small bonus for a budget match.
+
+    Lower score is better.
+    - Base score: physical distance to centroid in km.
+    - Matching budget tier: -1.5 km bonus (with small boost for higher rating in tier).
+    - Unrated: 0.0 km adjustment (evaluated purely on distance).
+    - Mismatched budget tier: +4.0 km penalty.
+    """
+    score = hotel.distance_km
+    if hotel.rating is None:
+        return score
+
+    if _matches_budget(hotel.rating, budget_level):
+        score -= 1.5
+        if budget_level in (BudgetLevel.MID, BudgetLevel.LUXURY):
+            score -= (hotel.rating - 2.5) * 0.2
+    else:
+        score += 4.0
+    return score
+
+
+def _fetch_overpass_hotels_for_radius(
+    c_lat: float,
+    c_lon: float,
+    radius_meters: int,
     client: Optional[httpx.Client] = None,
 ) -> list[Hotel]:
-    """Find and rank hotels closest to the geographic centroid of the planned places."""
-    centroid = compute_centroid(places)
-    if not centroid:
-        logger.warning("hotel_tool called with empty places list; cannot compute centroid.")
-        return []
-
-    c_lat, c_lon = centroid
-
-    # Search within 10km around centroid
+    """Query Overpass API for hotels within a specific radius around centroid."""
     overpass_query = f"""
     [out:json][timeout:25];
     (
-      node["tourism"="hotel"](around:10000,{c_lat},{c_lon});
-      way["tourism"="hotel"](around:10000,{c_lat},{c_lon});
+      node["tourism"="hotel"](around:{radius_meters},{c_lat},{c_lon});
+      way["tourism"="hotel"](around:{radius_meters},{c_lat},{c_lon});
     );
-    out center tags 40;
+    out center tags 50;
     """
-
     raw = cached_request(
         method="POST",
         url=OVERPASS_API_URL,
@@ -109,7 +122,6 @@ def hotel_tool(
         client=client,
     )
     if not raw:
-        logger.warning(f"Overpass hotel query returned no response for centroid ({c_lat}, {c_lon})")
         return []
 
     hotels: list[Hotel] = []
@@ -148,23 +160,43 @@ def hotel_tool(
                     source="osm-overpass",
                 )
             )
-
-        # Filter candidates according to budget tier
-        budget_matched = [h for h in hotels if _matches_budget(h.rating, budget_level)]
-        # If strict filtering left no candidates, fall back to all hotels
-        candidates = budget_matched if budget_matched else hotels
-
-        # Ranking criteria:
-        # 1. Explicit matches for requested budget tier first (0 vs 1)
-        # 2. Distance to centroid ascending
-        # 3. For LUXURY/MID prefer higher rating; for BUDGET prefer lower rating
-        def sort_key(h: Hotel):
-            has_explicit_budget_match = 0 if (h.rating is not None and _matches_budget(h.rating, budget_level)) else 1
-            rating_order = -(h.rating or 0.0) if budget_level != BudgetLevel.BUDGET else (h.rating or 99.0)
-            return (has_explicit_budget_match, h.distance_km, rating_order)
-
-        candidates.sort(key=sort_key)
-        return candidates[:limit]
+        return hotels
     except Exception as exc:
         logger.warning(f"Error parsing hotel data from Overpass: {exc}")
         return []
+
+
+def hotel_tool(
+    places: list[Place],
+    budget_level: BudgetLevel = BudgetLevel.MID,
+    limit: int = 5,
+    client: Optional[httpx.Client] = None,
+) -> list[Hotel]:
+    """Find and rank hotels closest to the geographic centroid of the planned places.
+
+    Searches a tight radius first (3 km), widening to 8 km if too few hotels are found.
+    Ranks using a combined score (distance first, with a bonus for matching budget tier).
+    """
+    centroid = compute_centroid(places)
+    if not centroid:
+        logger.warning("hotel_tool called with empty places list; cannot compute centroid.")
+        return []
+
+    c_lat, c_lon = centroid
+
+    # Progressive radius expansion: search tight 3 km radius first, widen if too few results
+    hotels = _fetch_overpass_hotels_for_radius(c_lat, c_lon, radius_meters=3000, client=client)
+    if len(hotels) < limit:
+        wider_hotels = _fetch_overpass_hotels_for_radius(c_lat, c_lon, radius_meters=8000, client=client)
+        existing_names = {h.name.lower() for h in hotels}
+        for h in wider_hotels:
+            if h.name.lower() not in existing_names:
+                hotels.append(h)
+                existing_names.add(h.name.lower())
+
+    if not hotels:
+        return []
+
+    # Combined score ranking: distance first, adjusted by budget alignment bonus/penalty
+    hotels.sort(key=lambda h: (_compute_hotel_score(h, budget_level), h.distance_km))
+    return hotels[:limit]

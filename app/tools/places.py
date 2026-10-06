@@ -46,13 +46,54 @@ def _build_geoapify_categories(interests: list[str]) -> str:
     return ",".join(dict.fromkeys(selected_categories))
 
 
-def _classify_indoor_outdoor(category_or_tags: str) -> bool:
-    """Determine if a place is primarily outdoor (True) or indoor (False)."""
+def _classify_indoor_outdoor(category_or_tags: str) -> Optional[bool]:
+    """Classify whether a place is primarily outdoor (True), indoor (False), or unknown (None).
+
+    Never defaults to True when unknown; returns None so the validator does not act on a guess.
+    """
     text = category_or_tags.lower()
-    indoor_keywords = ("museum", "gallery", "aquarium", "theatre", "theater", "palace_interior", "cinema", "mall")
+    indoor_keywords = (
+        "museum",
+        "gallery",
+        "aquarium",
+        "theatre",
+        "theater",
+        "cinema",
+        "mall",
+        "palace_interior",
+        "restaurant",
+        "cafe",
+        "indoor",
+        "church",
+        "cathedral",
+        "mosque",
+        "temple",
+        "synagogue",
+    )
+    outdoor_keywords = (
+        "park",
+        "garden",
+        "viewpoint",
+        "beach",
+        "ruins",
+        "monument",
+        "memorial",
+        "zoo",
+        "nature_reserve",
+        "trail",
+        "lake",
+        "mountain",
+        "outdoor",
+        "fort",
+        "castle",
+        "square",
+        "plaza",
+    )
     if any(k in text for k in indoor_keywords):
         return False
-    return True
+    if any(k in text for k in outdoor_keywords):
+        return True
+    return None
 
 
 def _fetch_from_geoapify(
@@ -130,20 +171,35 @@ def _fetch_from_geoapify(
 def _fetch_from_overpass(
     lat: float,
     lon: float,
+    interests: list[str],
     limit: int = 15,
     client: Optional[httpx.Client] = None,
 ) -> list[Place]:
-    """Query OpenStreetMap Overpass API for tourism and historic attractions."""
-    # Search within 15km around city center
+    """Query OpenStreetMap Overpass API for attractions matching interests, prioritizing notable sights."""
+    clauses = [
+        f'node["tourism"~"attraction|museum|viewpoint|gallery"](around:15000,{lat},{lon});',
+        f'way["tourism"~"attraction|museum|viewpoint|gallery"](around:15000,{lat},{lon});',
+        f'node["historic"~"monument|castle|memorial|ruins|fort"](around:15000,{lat},{lon});',
+        f'way["historic"~"monument|castle|memorial|ruins|fort"](around:15000,{lat},{lon});',
+    ]
+
+    cleaned_interests = [i.lower().strip() for i in interests]
+    if any(k in cleaned_interests for k in ("nature", "outdoors", "park")):
+        clauses.append(f'node["leisure"~"park|nature_reserve"](around:15000,{lat},{lon});')
+        clauses.append(f'way["leisure"~"park|nature_reserve"](around:15000,{lat},{lon});')
+    if any(k in cleaned_interests for k in ("art", "culture")):
+        clauses.append(f'node["amenity"="arts_centre"](around:15000,{lat},{lon});')
+        clauses.append(f'way["amenity"="arts_centre"](around:15000,{lat},{lon});')
+    if any(k in cleaned_interests for k in ("food", "culinary")):
+        clauses.append(f'node["amenity"~"marketplace|food_court"](around:10000,{lat},{lon});')
+        clauses.append(f'way["amenity"~"marketplace|food_court"](around:10000,{lat},{lon});')
+
     overpass_query = f"""
     [out:json][timeout:25];
     (
-      node["tourism"~"attraction|museum|viewpoint|gallery|theme_park"](around:15000,{lat},{lon});
-      way["tourism"~"attraction|museum|viewpoint|gallery|theme_park"](around:15000,{lat},{lon});
-      node["historic"~"monument|castle|memorial|ruins|archaeological_site"](around:15000,{lat},{lon});
-      way["historic"~"monument|castle|memorial|ruins|archaeological_site"](around:15000,{lat},{lon});
+      {" ".join(clauses)}
     );
-    out center tags {limit * 2};
+    out center tags {max(limit * 3, 40)};
     """
 
     raw = cached_request(
@@ -163,6 +219,14 @@ def _fetch_from_overpass(
     try:
         data = json.loads(raw)
         elements = data.get("elements", [])
+
+        # Prioritize prominent/notable elements that have wikidata or wikipedia tags
+        def notability_key(el: dict[str, Any]) -> int:
+            tags = el.get("tags", {})
+            return 1 if (tags.get("wikidata") or tags.get("wikipedia")) else 0
+
+        elements.sort(key=notability_key, reverse=True)
+
         for el in elements:
             tags = el.get("tags", {})
             name = tags.get("name:en") or tags.get("name")
@@ -179,7 +243,7 @@ def _fetch_from_overpass(
             if p_lat is None or p_lon is None:
                 continue
 
-            category = tags.get("tourism") or tags.get("historic") or "attraction"
+            category = tags.get("tourism") or tags.get("historic") or tags.get("leisure") or tags.get("amenity") or "attraction"
             is_outdoor = _classify_indoor_outdoor(f"{category} {cleaned_name}")
             place_id = f"osm:{el.get('type')}/{el.get('id')}"
             opening_hours = tags.get("opening_hours")
@@ -191,7 +255,7 @@ def _fetch_from_overpass(
                     lat=float(p_lat),
                     lon=float(p_lon),
                     category=category,
-                    rating=None,  # OSM does not typically carry reliable ratings
+                    rating=None,  # OSM does not carry verified review ratings
                     opening_hours=opening_hours,
                     is_outdoor=is_outdoor,
                     source="osm-overpass",
@@ -227,7 +291,7 @@ def places_tool(
         logger.info("Geoapify returned 0 places or failed. Falling back to OSM Overpass.")
 
     # Fallback to OSM Overpass
-    places = _fetch_from_overpass(lat, lon, limit=limit, client=client)
+    places = _fetch_from_overpass(lat, lon, interests=interests, limit=limit, client=client)
     if not places:
         logger.warning(f"No places found for city: {city} via any provider.")
         return []
