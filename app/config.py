@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # LLM configuration (Google Gemini)
     google_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
-    gemini_model: str = Field(default="gemini-2.0-flash", description="Gemini model identifier")
+    gemini_model: str = Field(default="gemini-3.5-flash", description="Gemini model identifier")
 
     # Places / Hotel APIs (Optional / Free tier)
     geoapify_api_key: Optional[str] = Field(default=None, description="Geoapify API key for places search")

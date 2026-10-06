@@ -10,12 +10,7 @@ from app.schemas.places import Place
 from app.schemas.trip import TripRequest
 from app.schemas.weather import DailyWeather
 
-try:
-    from langgraph.graph.message import add_messages
-except ImportError:
-    # Fallback reducer if langgraph is not yet imported
-    def add_messages(left: list[Any], right: list[Any]) -> list[Any]:
-        return list(left) + list(right)
+from langgraph.graph.message import add_messages
 
 
 class TravelState(TypedDict, total=False):
