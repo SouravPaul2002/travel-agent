@@ -12,3 +12,10 @@ def isolate_test_cache(tmp_path, monkeypatch):
     init_cache_db(test_db)
     monkeypatch.setattr(settings, "cache_db_path", test_db)
     yield test_db
+
+
+@pytest.fixture(autouse=True)
+def fast_retry_sleep(monkeypatch):
+    """Fast-forward retry backoff sleeps in HTTP tests to keep test runs fast."""
+    monkeypatch.setattr("app.tools._http.time.sleep", lambda _: None)
+    yield

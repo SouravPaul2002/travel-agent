@@ -126,6 +126,7 @@ def _fetch_from_geoapify(
         return []
 
     places: list[Place] = []
+    seen_names: set[str] = set()
     try:
         data = json.loads(raw)
         features = data.get("features", [])
@@ -134,6 +135,11 @@ def _fetch_from_geoapify(
             name = props.get("name")
             if not name or not name.strip():
                 continue
+            cleaned_name = name.strip()
+            if cleaned_name.lower() in seen_names:
+                continue
+            seen_names.add(cleaned_name.lower())
+
             p_lat = props.get("lat")
             p_lon = props.get("lon")
             if p_lat is None or p_lon is None:

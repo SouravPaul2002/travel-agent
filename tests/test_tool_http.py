@@ -44,9 +44,8 @@ def test_cache_set_and_get(temp_cache_db):
 def test_cache_ttl_expiration(temp_cache_db):
     """Verify that expired cache entries return None."""
     key = "expiring_key"
-    # Store with 0.05s TTL
-    set_cached_response(key, 200, "data", ttl_seconds=0.05, db_path=temp_cache_db)
-    time.sleep(0.06)
+    # Store with negative TTL so it is immediately expired
+    set_cached_response(key, 200, "data", ttl_seconds=-1.0, db_path=temp_cache_db)
     cached = get_cached_response(key, db_path=temp_cache_db)
     assert cached is None
 
