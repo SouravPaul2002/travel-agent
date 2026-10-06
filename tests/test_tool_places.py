@@ -119,14 +119,25 @@ def test_places_tool_all_providers_fail(monkeypatch):
 
 
 def test_classify_indoor_outdoor_returns_none_when_unknown():
-    """Verify classifier returns None when environment is ambiguous, not guessing True."""
+    """Verify classifier returns None when environment is ambiguous or guesses, with no substring misfires."""
     from app.tools.places import _classify_indoor_outdoor
 
     assert _classify_indoor_outdoor("museum of art") is False
     assert _classify_indoor_outdoor("city park") is True
-    assert _classify_indoor_outdoor("historic fort") is True
+    assert _classify_indoor_outdoor("nature reserve") is True
+    assert _classify_indoor_outdoor("viewpoint") is True
+
+    # Ambiguous or open-air mixed categories must return None (never guess)
+    assert _classify_indoor_outdoor("historic fort") is None
+    assert _classify_indoor_outdoor("hindu temple") is None
+    assert _classify_indoor_outdoor("ancient church") is None
+    assert _classify_indoor_outdoor("city mosque") is None
     assert _classify_indoor_outdoor("tourism.sights generic_poi") is None
-    assert _classify_indoor_outdoor("attraction obscure_marker") is None
+
+    # Substring safety checks: "small" != "mall", "comfort" != "fort", "parkash" != "park"
+    assert _classify_indoor_outdoor("small craft shop") is None
+    assert _classify_indoor_outdoor("comfort rest area") is None
+    assert _classify_indoor_outdoor("parkash gathering hall") is None
 
 
 @respx.mock

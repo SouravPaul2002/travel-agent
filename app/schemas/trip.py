@@ -23,9 +23,10 @@ class GeocodedLocation(BaseModel):
     admin1: Optional[str] = Field(default=None, description="Administrative subdivision, state, or province e.g. 'Rajasthan'")
     timezone: Optional[str] = Field(default=None, description="Local timezone identifier e.g. 'Asia/Kolkata'")
 
-    def __iter__(self):
-        yield self.lat
-        yield self.lon
+    @property
+    def coords(self) -> tuple[float, float]:
+        """Return (latitude, longitude) coordinate tuple."""
+        return (self.lat, self.lon)
 
 
 

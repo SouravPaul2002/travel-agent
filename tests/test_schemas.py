@@ -7,6 +7,7 @@ from app.schemas import (
     BudgetLevel,
     DailyWeather,
     DayPlan,
+    GeocodedLocation,
     Hotel,
     Itinerary,
     Place,
@@ -175,3 +176,25 @@ def test_travel_state_model():
     assert state.trip_request.city == "Jaipur"
     assert state.retry_count == 1
     assert len(state.errors) == 1
+
+
+def test_geocoded_location_coords_and_dict_conversion():
+    """Verify GeocodedLocation supports coords property and converts to dict without TypeError."""
+    loc = GeocodedLocation(
+        name="Jaipur",
+        lat=26.9196,
+        lon=75.7878,
+        country="India",
+        country_code="IN",
+        admin1="Rajasthan",
+    )
+    # Coords property
+    assert loc.coords == (26.9196, 75.7878)
+
+    # Standard dict(model) must NOT raise TypeError
+    d = dict(loc)
+    assert d["name"] == "Jaipur"
+    assert d["lat"] == 26.9196
+    assert d["lon"] == 75.7878
+    assert d["country"] == "India"
+

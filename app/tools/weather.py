@@ -90,9 +90,9 @@ def geocode_city(
             return None
 
         # Filter by country if specified
-        target_item = None
         if country:
             country_clean = country.strip().lower()
+            target_item = None
             for item in results:
                 c_name = (item.get("country") or "").lower()
                 c_code = (item.get("country_code") or "").lower()
@@ -100,7 +100,12 @@ def geocode_city(
                     target_item = item
                     break
 
-        if target_item is None:
+            if target_item is None:
+                logger.warning(
+                    f"City '{cleaned_city}' was found, but none of the candidate results matched the specified country '{country}'."
+                )
+                return None
+        else:
             target_item = results[0]
 
         return GeocodedLocation(

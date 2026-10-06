@@ -35,7 +35,7 @@ def run_smoke_test(city: str = "Jaipur") -> None:
     if not coords:
         print(f"  [FAIL] Could not geocode city: {city}")
         return
-    lat, lon = coords
+    lat, lon = coords.coords
     location_label = f"{coords.name}, {coords.admin1 + ', ' if coords.admin1 else ''}{coords.country or ''}".strip()
     print(f"  [OK] Resolved location: {location_label} (lat={lat:.4f}, lon={lon:.4f})")
 

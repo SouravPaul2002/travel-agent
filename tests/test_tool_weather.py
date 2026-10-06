@@ -31,11 +31,34 @@ def test_geocode_city_success():
     with httpx.Client() as client:
         coords = geocode_city("Jaipur", client=client)
         assert coords is not None
-        lat, lon = coords
+        lat, lon = coords.coords
         assert round(lat, 2) == 26.92
         assert round(lon, 2) == 75.79
         assert coords.country == "India"
         assert coords.name == "Jaipur"
+
+
+@respx.mock
+def test_geocode_city_country_mismatch_returns_none():
+    """Verify that specifying a country that does not match candidates returns None, not a silent wrong country."""
+    mock_payload = {
+        "results": [
+            {
+                "id": 4250542,
+                "name": "Springfield",
+                "latitude": 39.7817,
+                "longitude": -89.6501,
+                "country": "United States",
+                "country_code": "US",
+            }
+        ]
+    }
+    respx.get(GEOCODING_API_URL).respond(200, json=mock_payload)
+
+    with httpx.Client() as client:
+        # Request Springfield in France — must NOT fall back to United States!
+        coords = geocode_city("Springfield", country="France", client=client)
+        assert coords is None
 
 
 @respx.mock

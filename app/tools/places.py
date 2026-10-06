@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Any, Optional
 
 import httpx
@@ -32,6 +33,39 @@ GEOAPIFY_CATEGORY_MAP: dict[str, str] = {
 
 DEFAULT_GEOAPIFY_CATEGORIES = "tourism.sights,entertainment.culture,heritage"
 
+INDOOR_KEYWORDS: set[str] = {
+    "museum",
+    "gallery",
+    "aquarium",
+    "theatre",
+    "theater",
+    "cinema",
+    "mall",
+    "interior",
+    "restaurant",
+    "cafe",
+    "indoor",
+}
+
+OUTDOOR_KEYWORDS: set[str] = {
+    "park",
+    "garden",
+    "viewpoint",
+    "beach",
+    "ruins",
+    "monument",
+    "memorial",
+    "zoo",
+    "nature",
+    "reserve",
+    "trail",
+    "lake",
+    "mountain",
+    "outdoor",
+    "square",
+    "plaza",
+}
+
 
 def _build_geoapify_categories(interests: list[str]) -> str:
     """Translate user interests into comma-separated Geoapify categories."""
@@ -47,51 +81,16 @@ def _build_geoapify_categories(interests: list[str]) -> str:
 
 
 def _classify_indoor_outdoor(category_or_tags: str) -> Optional[bool]:
-    """Classify whether a place is primarily outdoor (True), indoor (False), or unknown (None).
+    """Classify whether a place category is primarily outdoor (True), indoor (False), or unknown (None).
 
-    Never defaults to True when unknown; returns None so the validator does not act on a guess.
+    Uses whole-word matching strictly on category tags, never inspecting the place name.
+    Temples, churches, mosques, and forts are intentionally excluded (returning None)
+    because they are often open-air or mixed complexes, avoiding unwarranted guesses.
     """
-    text = category_or_tags.lower()
-    indoor_keywords = (
-        "museum",
-        "gallery",
-        "aquarium",
-        "theatre",
-        "theater",
-        "cinema",
-        "mall",
-        "palace_interior",
-        "restaurant",
-        "cafe",
-        "indoor",
-        "church",
-        "cathedral",
-        "mosque",
-        "temple",
-        "synagogue",
-    )
-    outdoor_keywords = (
-        "park",
-        "garden",
-        "viewpoint",
-        "beach",
-        "ruins",
-        "monument",
-        "memorial",
-        "zoo",
-        "nature_reserve",
-        "trail",
-        "lake",
-        "mountain",
-        "outdoor",
-        "fort",
-        "castle",
-        "square",
-        "plaza",
-    )
-    if any(k in text for k in indoor_keywords):
+    words = set(re.findall(r"[a-z]+", category_or_tags.lower()))
+    if words & INDOOR_KEYWORDS:
         return False
-    if any(k in text for k in outdoor_keywords):
+    if words & OUTDOOR_KEYWORDS:
         return True
     return None
 
@@ -142,7 +141,7 @@ def _fetch_from_geoapify(
 
             category_list = props.get("categories", ["tourism.sights"])
             category_str = category_list[0] if isinstance(category_list, list) and category_list else "tourism.sights"
-            is_outdoor = _classify_indoor_outdoor(f"{category_str} {name}")
+            is_outdoor = _classify_indoor_outdoor(category_str)
             place_id = props.get("place_id") or f"geoapify:{p_lat},{p_lon}"
             opening_hours = props.get("opening_hours")
             # Note: Geoapify Places v2 rank.confidence represents search match confidence,
@@ -168,32 +167,41 @@ def _fetch_from_geoapify(
         return []
 
 
-def _fetch_from_overpass(
+def _build_overpass_clauses(
     lat: float,
     lon: float,
     interests: list[str],
-    limit: int = 15,
-    client: Optional[httpx.Client] = None,
-) -> list[Place]:
-    """Query OpenStreetMap Overpass API for attractions matching interests, prioritizing notable sights."""
+    require_wikidata: bool = False,
+) -> list[str]:
+    """Construct Overpass query clauses with optional wikidata requirement."""
+    wiki_filter = '["wikidata"]' if require_wikidata else ""
     clauses = [
-        f'node["tourism"~"attraction|museum|viewpoint|gallery"](around:15000,{lat},{lon});',
-        f'way["tourism"~"attraction|museum|viewpoint|gallery"](around:15000,{lat},{lon});',
-        f'node["historic"~"monument|castle|memorial|ruins|fort"](around:15000,{lat},{lon});',
-        f'way["historic"~"monument|castle|memorial|ruins|fort"](around:15000,{lat},{lon});',
+        f'node["tourism"~"attraction|museum|viewpoint|gallery"]{wiki_filter}(around:15000,{lat},{lon});',
+        f'way["tourism"~"attraction|museum|viewpoint|gallery"]{wiki_filter}(around:15000,{lat},{lon});',
+        f'node["historic"~"monument|castle|memorial|ruins|fort"]{wiki_filter}(around:15000,{lat},{lon});',
+        f'way["historic"~"monument|castle|memorial|ruins|fort"]{wiki_filter}(around:15000,{lat},{lon});',
     ]
 
     cleaned_interests = [i.lower().strip() for i in interests]
     if any(k in cleaned_interests for k in ("nature", "outdoors", "park")):
-        clauses.append(f'node["leisure"~"park|nature_reserve"](around:15000,{lat},{lon});')
-        clauses.append(f'way["leisure"~"park|nature_reserve"](around:15000,{lat},{lon});')
+        clauses.append(f'node["leisure"~"park|nature_reserve"]{wiki_filter}(around:15000,{lat},{lon});')
+        clauses.append(f'way["leisure"~"park|nature_reserve"]{wiki_filter}(around:15000,{lat},{lon});')
     if any(k in cleaned_interests for k in ("art", "culture")):
-        clauses.append(f'node["amenity"="arts_centre"](around:15000,{lat},{lon});')
-        clauses.append(f'way["amenity"="arts_centre"](around:15000,{lat},{lon});')
+        clauses.append(f'node["amenity"="arts_centre"]{wiki_filter}(around:15000,{lat},{lon});')
+        clauses.append(f'way["amenity"="arts_centre"]{wiki_filter}(around:15000,{lat},{lon});')
     if any(k in cleaned_interests for k in ("food", "culinary")):
-        clauses.append(f'node["amenity"~"marketplace|food_court"](around:10000,{lat},{lon});')
-        clauses.append(f'way["amenity"~"marketplace|food_court"](around:10000,{lat},{lon});')
+        clauses.append(f'node["amenity"~"marketplace|food_court"]{wiki_filter}(around:10000,{lat},{lon});')
+        clauses.append(f'way["amenity"~"marketplace|food_court"]{wiki_filter}(around:10000,{lat},{lon});')
 
+    return clauses
+
+
+def _execute_overpass_query(
+    clauses: list[str],
+    limit: int,
+    client: Optional[httpx.Client] = None,
+) -> list[Place]:
+    """Execute Overpass query for given clauses and return parsed Place objects."""
     overpass_query = f"""
     [out:json][timeout:25];
     (
@@ -210,7 +218,6 @@ def _fetch_from_overpass(
         client=client,
     )
     if not raw:
-        logger.warning("Overpass API returned no response or failed.")
         return []
 
     places: list[Place] = []
@@ -220,7 +227,7 @@ def _fetch_from_overpass(
         data = json.loads(raw)
         elements = data.get("elements", [])
 
-        # Prioritize prominent/notable elements that have wikidata or wikipedia tags
+        # Prioritize prominent elements that have wikidata or wikipedia tags
         def notability_key(el: dict[str, Any]) -> int:
             tags = el.get("tags", {})
             return 1 if (tags.get("wikidata") or tags.get("wikipedia")) else 0
@@ -237,14 +244,13 @@ def _fetch_from_overpass(
                 continue
             seen_names.add(cleaned_name.lower())
 
-            # Coordinates for nodes vs way centers
             p_lat = el.get("lat") or el.get("center", {}).get("lat")
             p_lon = el.get("lon") or el.get("center", {}).get("lon")
             if p_lat is None or p_lon is None:
                 continue
 
             category = tags.get("tourism") or tags.get("historic") or tags.get("leisure") or tags.get("amenity") or "attraction"
-            is_outdoor = _classify_indoor_outdoor(f"{category} {cleaned_name}")
+            is_outdoor = _classify_indoor_outdoor(category)
             place_id = f"osm:{el.get('type')}/{el.get('id')}"
             opening_hours = tags.get("opening_hours")
 
@@ -261,12 +267,37 @@ def _fetch_from_overpass(
                     source="osm-overpass",
                 )
             )
-            if len(places) >= limit:
-                break
         return places
     except Exception as exc:
         logger.warning(f"Error parsing OSM Overpass response: {exc}")
         return []
+
+
+def _fetch_from_overpass(
+    lat: float,
+    lon: float,
+    interests: list[str],
+    limit: int = 15,
+    client: Optional[httpx.Client] = None,
+) -> list[Place]:
+    """Query OSM Overpass API. Runs a first query requiring ["wikidata"], falling back to broader query if needed."""
+    # 1. First attempt: Query with ["wikidata"] filter to guarantee prominent sights are selected
+    wiki_clauses = _build_overpass_clauses(lat, lon, interests, require_wikidata=True)
+    places = _execute_overpass_query(wiki_clauses, limit=limit, client=client)
+
+    # 2. If fewer than limit places found, run broader query without ["wikidata"] and merge
+    if len(places) < limit:
+        broader_clauses = _build_overpass_clauses(lat, lon, interests, require_wikidata=False)
+        broader_places = _execute_overpass_query(broader_clauses, limit=limit, client=client)
+        seen = {p.name.lower() for p in places}
+        for p in broader_places:
+            if p.name.lower() not in seen:
+                places.append(p)
+                seen.add(p.name.lower())
+                if len(places) >= limit:
+                    break
+
+    return places[:limit]
 
 
 def places_tool(
@@ -276,12 +307,12 @@ def places_tool(
     client: Optional[httpx.Client] = None,
 ) -> list[Place]:
     """Discover attractions and POIs for a city. Uses Geoapify if configured, falling back to OSM Overpass."""
-    coords = geocode_city(city, client=client)
-    if not coords:
+    location = geocode_city(city, client=client)
+    if not location:
         logger.warning(f"Could not resolve geocoding for city: {city}. Returning empty places list.")
         return []
 
-    lat, lon = coords
+    lat, lon = location.coords
 
     # Try Geoapify first if API key is provided
     if settings.geoapify_api_key:
