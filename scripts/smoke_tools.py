@@ -26,7 +26,7 @@ from app.tools import (
 
 def run_smoke_test(city: str = "Jaipur") -> None:
     print("=" * 60)
-    print(f"TRAVEL PLANNER AGENT — LIVE SMOKE TEST FOR '{city}'")
+    print(f"TRAVEL PLANNER AGENT - LIVE SMOKE TEST FOR '{city}'")
     print("=" * 60)
 
     # 1. Geocoding & Weather
@@ -43,8 +43,8 @@ def run_smoke_test(city: str = "Jaipur") -> None:
     if forecast:
         print(f"  [OK] Fetched {len(forecast)} days of forecast:")
         for w in forecast:
-            t_min = f"{w.temp_min}°C" if w.temp_min is not None else "N/A"
-            t_max = f"{w.temp_max}°C" if w.temp_max is not None else "N/A"
+            t_min = f"{w.temp_min}C" if w.temp_min is not None else "N/A"
+            t_max = f"{w.temp_max}C" if w.temp_max is not None else "N/A"
             rain = f"{w.precipitation_prob}%" if w.precipitation_prob is not None else "N/A"
             summ = w.summary or "Unknown"
             print(f"       - {w.date}: {t_min} to {t_max} | Rain: {rain} | {summ} (src: {w.source})")
