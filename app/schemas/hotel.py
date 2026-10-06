@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 class Hotel(BaseModel):
     """Hotel or accommodation recommendation."""
 
+    id: Optional[str] = Field(default=None, description="Unique hotel identifier from source provider")
     name: str = Field(..., min_length=1, description="Name of the hotel")
     lat: float = Field(..., ge=-90.0, le=90.0, description="Latitude coordinate")
     lon: float = Field(..., ge=-180.0, le=180.0, description="Longitude coordinate")
